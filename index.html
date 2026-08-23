@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Legal Metrology Compliance Checker</title>
+  <style>
+    body { font-family: sans-serif; background: #f8fafc; color: #0f172a; padding: 24px; }
+    .container { max-width: 900px; margin: 0 auto; }
+    .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; }
+    .card { background: white; padding: 20px; border-radius: 12px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1); }
+    .upload-box { border: 2px dashed #cbd5e1; padding: 24px; text-align: center; cursor: pointer; margin-bottom: 16px; border-radius: 8px; }
+    #image-preview { max-width: 100%; max-height: 200px; display: none; margin-top: 12px; }
+    button { width: 100%; background: #2563eb; color: white; border: none; padding: 12px; border-radius: 6px; font-weight: bold; cursor: pointer; }
+    button:disabled { background: #94a3b8; cursor: not-allowed; }
+    .badge { padding: 4px 12px; border-radius: 9999px; font-weight: bold; font-size: 14px; }
+    .badge-PASS { background: #dcfce7; color: #16a34a; }
+    .badge-NON-COMPLIANT { background: #fee2e2; color: #dc2626; }
+    .history-item { display: flex; justify-content: space-between; padding: 12px 0; border-bottom: 1px solid #e2e8f0; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>Legal Metrology Compliance Checker</h1>
+    <div class="grid">
+      <div class="card">
+        <h2>Scan Packaging Label</h2>
+        <div class="upload-box" onclick="document.getElementById('file-input').click()">
+          <p>Click or drag image here</p>
+          <input type="file" id="file-input" accept="image/*" style="display:none" onchange="previewImage(event)">
+          <img id="image-preview" alt="Preview">
+        </div>
+        <button id="scan-btn" onclick="uploadAndScan()" disabled>Run Audit</button>
+        <p id="loading" style="display:none; text-align:center;">Analyzing image with Gemini Vision AI...</p>
+      </div>
+
+      <div class="card">
+        <h2>Audit Results</h2>
+        <div id="results-placeholder"><p style="color:#64748b;">Upload an image to see results.</p></div>
+        <div id="results-content" style="display:none;">
+          <h3 id="res-product">Product</h3>
+          <p>Status: <span id="res-status" class="badge">STATUS</span></p>
+          <p>Compliance Score: <strong id="res-score">0</strong>/100</p>
+          <h4>Missing Declarations:</h4>
+          <ul id="res-missing"></ul>
+        </div>
+      </div>
+    </div>
+
+    <div class="card" style="margin-top: 24px;">
+      <h2>Audit History</h2>
+      <div id="history-list"></div>
+    </div>
+  </div>
+
+  <script>
+    const API_BASE = 'http://127.0.0.1:5000/api';
+    let selectedFile = null;
+
+    function previewImage(event) {
+      const file = event.target.files[0];
+      if (file) {
+        selectedFile = file;
+        const preview = document.getElementById('image-preview');
+        preview.src = URL.createObjectURL(file);
+        preview.style.display = 'block';
+        document.getElementById('scan-btn').disabled = false;
+      }
+    }
+
+    async function uploadAndScan() {
+      if (!selectedFile) return;
+      const formData = new FormData();
+      formData.append('image', selectedFile);
+
+      document.getElementById('scan-btn').disabled = true;
+      document.getElementById('loading').style.display = 'block';
+
+      try {
+        const response = await fetch(`${API_BASE}/scan`, { method: 'POST', body: formData });
+        const data = await response.json();
+        if (response.ok) {
+          displayResult(data);
+          loadHistory();
+        } else {
+          alert(`Error: ${data.error || 'Failed to scan'}`);
+        }
+      } catch (err) {
+        alert('Could not connect to backend server. Make sure app.py is running!');
+      } finally {
+        document.getElementById('scan-btn').disabled = false;
+        document.getElementById('loading').style.display = 'none';
+      }
+    }
+
+    function displayResult(data) {
+      document.getElementById('results-placeholder').style.display = 'none';
+      document.getElementById('results-content').style.display = 'block';
+      document.getElementById('res-product').textContent = data.product_name;
+      document.getElementById('res-score').textContent = data.compliance_score;
+      const statusBadge = document.getElementById('res-status');
+      statusBadge.textContent = data.status;
+      statusBadge.className = `badge badge-${data.status}`;
+
+      const missingList = document.getElementById('res-missing');
+      missingList.innerHTML = '';
+      if (data.missing_declarations && data.missing_declarations.length > 0) {
+        data.missing_declarations.forEach(item => {
+          const li = document.createElement('li');
+          li.textContent = item;
+          missingList.appendChild(li);
+        });
+      } else {
+        missingList.innerHTML = '<li style="color:green;">None - Fully Compliant!</li>';
+      }
+    }
+
+    async function loadHistory() {
+      try {
+        const res = await fetch(`${API_BASE}/history`);
+        const history = await res.json();
+        const container = document.getElementById('history-list');
+        if (history.length === 0) {
+          container.innerHTML = '<p style="color:#64748b;">No recent audits found.</p>';
+          return;
+        }
+        container.innerHTML = history.map(item => `
+          <div class="history-item">
+            <div><strong>${item.product_name}</strong><br><small style="color:#64748b;">${item.scanned_at}</small></div>
+            <div><span class="badge badge-${item.status}">${item.status} (${item.compliance_score}%)</span></div>
+          </div>
+        `).join('');
+      } catch (err) { console.error(err); }
+    }
+
+    loadHistory();
+  </script>
+</body>
+</html>
