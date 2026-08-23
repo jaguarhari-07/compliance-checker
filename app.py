@@ -34,7 +34,7 @@ def init_db():
 
 init_db()
 
-@app.route('/api/scan', methods=['POST'])
+@app.route('/scan', methods=['POST'])
 def scan_commodity():
     if 'image' not in request.files:
         return jsonify({'error': 'No image file provided'}), 400
@@ -112,7 +112,7 @@ def scan_commodity():
             'details': str(e)
         }), 500
 
-@app.route('/api/history', methods=['GET'])
+@app.route('/history', methods=['GET'])
 def get_history():
     conn = sqlite3.connect(DB_NAME)
     cursor = conn.cursor()
