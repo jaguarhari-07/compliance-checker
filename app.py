@@ -2,11 +2,13 @@ import io
 import json
 import os
 import sqlite3
+import time
 import traceback
 from flask import Flask, jsonify, request
 from flask_cors import CORS
 from google import genai
 from google.genai import types
+from google.genai.errors import ServerError
 
 app = Flask(__name__)
 CORS(app)
@@ -68,14 +70,28 @@ def scan_commodity():
         }
         """
 
-        # Updated to gemini-2.5-flash
-        response = ai_client.models.generate_content(
-            model='gemini-3.6-flash',
-            contents=[img_part, prompt],
-            config=types.GenerateContentConfig(
-                response_mime_type="application/json"
-            )
-        )
+        # Model failover strategy to prevent 503 crashes
+        models_to_try = ['gemini-3.6-flash', 'gemini-2.5-flash']
+        response = None
+
+        for model_name in models_to_try:
+            try:
+                response = ai_client.models.generate_content(
+                    model=model_name,
+                    contents=[img_part, prompt],
+                    config=types.GenerateContentConfig(
+                        response_mime_type="application/json"
+                    )
+                )
+                break  # Exit loop if the request succeeds
+            except ServerError as err:
+                if err.code == 503:
+                    time.sleep(1)  # Brief delay before trying fallback model
+                    continue
+                raise err
+
+        if not response:
+            raise Exception("Failed to receive a response from Gemini models.")
 
         audit_result = json.loads(response.text)
 
